@@ -12,9 +12,9 @@
 //
 // TODO:Student Information
 //
-const char *studentName = "TODO";
-const char *studentID = "TODO";
-const char *email = "TODO";
+const char *studentName = "Ava Gonick";
+const char *studentID = "A16729754";
+const char *email = "agonick@ucsd.edu";
 
 //------------------------------------//
 //      Predictor Configuration       //
@@ -30,7 +30,7 @@ int bpType;            // Branch Prediction Type
 int verbose;
 
 //------------------------------------//
-//      Predictor Data Structures     //
+//      Predictor Data Structures     // 
 //------------------------------------//
 
 //
@@ -40,12 +40,251 @@ int verbose;
 uint8_t *bht_gshare;
 uint64_t ghistory;
 
+//tournament 
+
+//local history table for tournament
+uint16_t *lht_tournament;
+//local prediction for tournament
+uint8_t *lpred_tournament;
+
+//global history for the tournament
+uint16_t ghistory_tournament;
+//global prediction for tournament
+uint8_t *gpred_tournament;
+
+//choice predictor
+uint8_t *cpred_tournament;
+
 //------------------------------------//
 //        Predictor Functions         //
 //------------------------------------//
 
 // Initialize the predictor
 //
+
+//tournament functions 
+void init_tournament()
+{
+
+  //create the local history table, it has 1024 entires of size 10
+  //can not get a size 10 value in C so using 16 and will only use the bottom 10 bits
+  int local_entries = 1024;
+  lht_tournament = (uint16_t *)malloc(local_entries * sizeof(uint16_t));
+  int i = 0;
+
+  //initiating history as all 0s 
+  for (i = 0; i < local_entries; i++)
+  {
+    lht_tournament[i] = 0;
+  }
+ 
+  //create local prediction table 
+  lpred_tournament = (uint8_t *)malloc(local_entries * sizeof(uint8_t));
+
+  //initiating all predictions as weakly not taken
+  for (i = 0; i < local_entries; i++)
+  {
+    lpred_tournament[i] = WN3;
+  }
+
+  //initiation the global predictor it has 4096 entires 
+  gpred_tournament = (uint8_t *)malloc(4096 * sizeof(uint8_t));
+
+  //initiating all predictions as weakly not taken
+  for (i = 0; i < 4096; i++)
+  {
+    gpred_tournament[i] = WN;
+  }
+
+
+  //initiation the choice predictor it has 4096 entires 
+  cpred_tournament = (uint8_t *)malloc(4096 * sizeof(uint8_t));
+
+  //initiating all predictions as weakly not taken
+  for (i = 0; i < 4096; i++)
+  {
+    cpred_tournament[i] = LW;
+  }
+}
+
+
+
+uint8_t tournament_predict(uint32_t pc)
+{
+  //lht_entries 
+  uint32_t lht_entries = 1 << 10;
+
+  //get the bottom 10 bits in the pc this is your index
+  //even though going to a different size int is is ok because it will just chop off the unused upper bits 
+  uint32_t index = pc & (lht_entries - 1);
+
+  int local;
+
+  //if between 0 and 3 inclsuive you are not taken
+  if (lpred_tournament[index] >= 0 && lpred_tournament[index] < 4){
+    local = NOTTAKEN;
+  }
+
+  //if between 4 and 8 inclusive you are taken
+  else if (lpred_tournament[index] >= 4 && lpred_tournament[index] < 8){
+    local = TAKEN;
+  }
+
+  //debugging that mentions an invalid state 
+  else {
+     printf("Warning: Undefined state of entry in lpred_tournament!\n");
+     return NOTTAKEN;
+  }
+
+
+  //get the global prediction
+  int global;
+  uint32_t bht_entries = 1 << 12;
+  uint32_t pc_lower_bits = pc & (bht_entries - 1);
+  uint32_t ghistory_lower_bits = ghistory_tournament & (bht_entries - 1);
+  index = pc_lower_bits ^ ghistory_lower_bits;
+
+  //if between 0 and 2 inclsuive you are not taken
+  if (gpred_tournament[index] >= 0 && gpred_tournament[index] < 3){
+    global = NOTTAKEN;
+  }
+
+  //if between 3 and 4 inclusive you are taken
+  else if (gpred_tournament[index] >= 3 && gpred_tournament[index] < 5){
+    global = TAKEN;
+  }
+
+  //debugging that mentions an invalid state 
+  else {
+     printf("Warning: Undefined state of entry in gpred_tournament!\n");
+    return NOTTAKEN;
+  }
+
+  if (global == local){
+    return global;
+  }
+
+  //if they dont agree return based on if it should be the global or local predictor 
+  else {
+    if (cpred_tournament[index] == LW || cpred_tournament[index] == LS){
+      return local;
+     }
+
+     else {
+      return global;
+     }
+  }
+}
+
+
+
+void train_tournament(uint32_t pc, uint8_t outcome)
+{
+  //train the local predictor 
+  uint32_t lht_entries = 1 << 10;
+
+  //get the bottom 10 bits in the pc this is your index
+  //even though going to a different size int is is ok because it will just chop off the unused upper bits 
+  uint32_t index = pc & (lht_entries - 1);
+
+
+  // Update state of entry in the local prediction branch
+  switch (lpred_tournament[index])
+  {
+  case SN3:
+    lpred_tournament[index] = (outcome == TAKEN) ? MN3 : SN3;
+    break;
+  case MN3:
+    lpred_tournament[index] = (outcome == TAKEN) ? SLN3 : SN3;
+    break;
+  case SLN3:
+    lpred_tournament[index] = (outcome == TAKEN) ? WN3 : MN3;
+    break;
+  case WN3:
+   lpred_tournament[index] = (outcome == TAKEN) ? WT3 : SLN3;
+    break;
+  case WT3:
+    lpred_tournament[index] = (outcome == TAKEN) ? SLT3 : WN3;
+    break;
+  case SLT3:
+    lpred_tournament[index] = (outcome == TAKEN) ? MT3 : WT3;
+    break;
+  case MT3:
+    lpred_tournament[index] = (outcome == TAKEN) ? ST3 : SLT3;
+    break;
+  case ST3:
+    lpred_tournament[index] = (outcome == TAKEN) ? ST3 : MT3;
+    break;
+  default:
+    printf("Warning: Undefined state of entry in lpred_tournament!\n");
+    break;
+  }
+
+  //store the local prediction
+  int local = lpred_tournament[index];
+
+  //update history 
+  lht_tournament[index] = ((lht_tournament[index] << 1) | outcome) & (lht_entries - 1);
+
+
+  //train the global predictor 
+  // get lower ghistoryBits of pc
+  uint32_t bht_entries = 1 << 12;
+  uint32_t pc_lower_bits = pc & (bht_entries - 1);
+  uint32_t ghistory_lower_bits = ghistory_tournament & (bht_entries - 1);
+  index = pc_lower_bits ^ ghistory_lower_bits;
+
+  // Update state of entry in bht based on outcome
+  switch (gpred_tournament[index])
+  {
+  case WN:
+    gpred_tournament[index] = (outcome == TAKEN) ? WT : SN;
+    break;
+  case SN:
+    gpred_tournament[index] = (outcome == TAKEN) ? WN : SN;
+    break;
+  case WT:
+    gpred_tournament[index] = (outcome == TAKEN) ? ST : WN;
+    break;
+  case ST:
+    gpred_tournament[index] = (outcome == TAKEN) ? ST : WT;
+    break;
+  default:
+    printf("Warning: Undefined state of entry in gpred_tournament!\n");
+    break;
+  }
+
+  // Update history register
+  ghistory_tournament = ((ghistory_tournament << 1) | outcome) & (bht_entries - 1);
+
+  //store the global prediction
+  int global = gpred_tournament[index];
+
+
+  //update the choice predictor if needed
+  if (global != local){
+      switch (cpred_tournament[index])
+            {
+            case LS:
+             cpred_tournament[index] = (outcome == global) ? LW : LS;
+              break;
+            case LW:
+              cpred_tournament[index] = (outcome == global) ? GW : LS;
+              break;
+            case GW:
+              cpred_tournament[index] = (outcome == global) ? GS : LW;
+              break;
+            case GS:
+              cpred_tournament[index] = (outcome == global) ? GS : GW;
+              break;
+            default:
+              printf("Warning: Undefined state of entry in cpred_tournament!\n");
+              break;
+            }
+  }
+
+}
+
 
 // gshare functions
 void init_gshare()
@@ -55,6 +294,7 @@ void init_gshare()
   int i = 0;
   for (i = 0; i < bht_entries; i++)
   {
+    //is this the correct value 
     bht_gshare[i] = WN;
   }
   ghistory = 0;
@@ -130,6 +370,7 @@ void init_predictor()
     init_gshare();
     break;
   case TOURNAMENT:
+    init_tournament();
     break;
   case CUSTOM:
     break;
@@ -153,7 +394,7 @@ uint32_t make_prediction(uint32_t pc, uint32_t target, uint32_t direct)
   case GSHARE:
     return gshare_predict(pc);
   case TOURNAMENT:
-    return NOTTAKEN;
+    return tournament_predict(pc);
   case CUSTOM:
     return NOTTAKEN;
   default:
@@ -180,7 +421,7 @@ void train_predictor(uint32_t pc, uint32_t target, uint32_t outcome, uint32_t co
     case GSHARE:
       return train_gshare(pc, outcome);
     case TOURNAMENT:
-      return;
+      return train_tournament(pc, outcome);
     case CUSTOM:
       return;
     default:

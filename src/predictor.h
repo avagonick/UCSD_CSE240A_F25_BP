@@ -71,5 +71,22 @@ void train_predictor(uint32_t pc, uint32_t target, uint32_t outcome, uint32_t co
 // 
 
 
+//initialize 3 bit counter
+#define SN3 0 //strongly not taken 
+#define MN3 1 //mildly not taken
+#define SLN3 2 //slightly not taken
+#define WN3 3 //weakly not taken
+#define WT3 4 //weakly taken
+#define SLT3 5 //slightly taken
+#define MT3 6 //mildly taken
+#define ST3 7 //strongly taken
+
+
+//define values for choice preidctor 
+#define LS 0 //local strongly taken
+#define LW 1 //local weakly taken
+#define GW 2 //global weakly taken
+#define GS 3 //global strongly taken 
+
 
 #endif
