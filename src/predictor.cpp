@@ -68,7 +68,7 @@ void init_tournament()
 
   //create the local history table, it has 1024 entires of size 10
   //can not get a size 10 value in C so using 16 and will only use the bottom 10 bits
-  int local_entries = 1024;
+  int local_entries = 2048;
   lht_tournament = (uint16_t *)malloc(local_entries * sizeof(uint16_t));
   int i = 0;
 
@@ -88,20 +88,22 @@ void init_tournament()
   }
 
   //initiation the global predictor it has 4096 entires 
-  gpred_tournament = (uint8_t *)malloc(4096 * sizeof(uint8_t));
+  gpred_tournament = (uint8_t *)malloc(8192 * sizeof(uint8_t));
 
   //initiating all predictions as weakly not taken
-  for (i = 0; i < 4096; i++)
+  for (i = 0; i < 8192; i++)
   {
     gpred_tournament[i] = WN;
   }
 
+  ghistory_tournament = 0;
+
 
   //initiation the choice predictor it has 4096 entires 
-  cpred_tournament = (uint8_t *)malloc(4096 * sizeof(uint8_t));
+  cpred_tournament = (uint8_t *)malloc(8192 * sizeof(uint8_t));
 
   //initiating all predictions as weakly not taken
-  for (i = 0; i < 4096; i++)
+  for (i = 0; i < 8192; i++)
   {
     cpred_tournament[i] = LW;
   }
@@ -112,11 +114,11 @@ void init_tournament()
 uint8_t tournament_predict(uint32_t pc)
 {
   //lht_entries 
-  uint32_t lht_entries = 1 << 10;
+  uint32_t lht_entries = 1 << 11;
 
   //get the bottom 10 bits in the pc this is your index
   //even though going to a different size int is is ok because it will just chop off the unused upper bits 
-  uint32_t index = pc & (lht_entries - 1);
+  uint32_t index = lht_tournament[pc & (lht_entries - 1)];
 
   int local;
 
@@ -139,18 +141,16 @@ uint8_t tournament_predict(uint32_t pc)
 
   //get the global prediction
   int global;
-  uint32_t bht_entries = 1 << 12;
-  uint32_t pc_lower_bits = pc & (bht_entries - 1);
-  uint32_t ghistory_lower_bits = ghistory_tournament & (bht_entries - 1);
-  index = pc_lower_bits ^ ghistory_lower_bits;
+  uint32_t bht_entries = 1 << 13;
+  index = ghistory_tournament & (bht_entries - 1);
 
-  //if between 0 and 2 inclsuive you are not taken
-  if (gpred_tournament[index] >= 0 && gpred_tournament[index] < 3){
+  //if between 0 and 1 inclsuive you are not taken
+  if (gpred_tournament[index] >= 0 && gpred_tournament[index] < 2){
     global = NOTTAKEN;
   }
 
-  //if between 3 and 4 inclusive you are taken
-  else if (gpred_tournament[index] >= 3 && gpred_tournament[index] < 5){
+  //if between 2 and 3 inclusive you are taken
+  else if (gpred_tournament[index] >= 2 && gpred_tournament[index] < 4){
     global = TAKEN;
   }
 
@@ -181,11 +181,14 @@ uint8_t tournament_predict(uint32_t pc)
 void train_tournament(uint32_t pc, uint8_t outcome)
 {
   //train the local predictor 
-  uint32_t lht_entries = 1 << 10;
+  uint32_t lht_entries = 1 << 11;
 
   //get the bottom 10 bits in the pc this is your index
   //even though going to a different size int is is ok because it will just chop off the unused upper bits 
-  uint32_t index = pc & (lht_entries - 1);
+  uint32_t index = lht_tournament[pc & (lht_entries - 1)];
+
+    //store the local prediction
+  int local = lpred_tournament[index] >= 4 ? TAKEN : NOTTAKEN;
 
 
   // Update state of entry in the local prediction branch
@@ -220,19 +223,20 @@ void train_tournament(uint32_t pc, uint8_t outcome)
     break;
   }
 
-  //store the local prediction
-  int local = lpred_tournament[index];
 
-  //update history 
-  lht_tournament[index] = ((lht_tournament[index] << 1) | outcome) & (lht_entries - 1);
+//update history 
+ lht_tournament[pc & (lht_entries - 1)] = ((lht_tournament[pc & (lht_entries - 1)] << 1) | outcome) & (lht_entries - 1);
 
 
   //train the global predictor 
   // get lower ghistoryBits of pc
-  uint32_t bht_entries = 1 << 12;
-  uint32_t pc_lower_bits = pc & (bht_entries - 1);
-  uint32_t ghistory_lower_bits = ghistory_tournament & (bht_entries - 1);
-  index = pc_lower_bits ^ ghistory_lower_bits;
+  uint32_t bht_entries = 1 << 13;
+  index = ghistory_tournament & (bht_entries - 1);
+
+
+    //store the global prediction
+  int global = gpred_tournament[index] >= 2 ? TAKEN : NOTTAKEN;
+
 
   // Update state of entry in bht based on outcome
   switch (gpred_tournament[index])
@@ -256,9 +260,6 @@ void train_tournament(uint32_t pc, uint8_t outcome)
 
   // Update history register
   ghistory_tournament = ((ghistory_tournament << 1) | outcome) & (bht_entries - 1);
-
-  //store the global prediction
-  int global = gpred_tournament[index];
 
 
   //update the choice predictor if needed
